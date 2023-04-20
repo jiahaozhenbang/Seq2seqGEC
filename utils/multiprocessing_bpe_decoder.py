@@ -26,13 +26,13 @@ def main():
     parser.add_argument(
         "--encoder-json",
         help="path to encoder.json",
-        default="../../pretrained_weights/encoder.json"
+        default="/home/ljh/GEC/Seq2seqGEC/pretrained_weights/encoder.json"
     )
     parser.add_argument(
         "--vocab-bpe",
         type=str,
         help="path to vocab.bpe",
-        default="../../pretrained_weights/vocab.bpe"
+        default="/home/ljh/GEC/Seq2seqGEC/pretrained_weights/vocab.bpe"
     )
     parser.add_argument(
         "--inputs",
@@ -104,29 +104,31 @@ class MultiprocessingEncoder(object):
         return list(map(str, ids))
 
     def decode(self, line):
-        # global bpe
-        # return bpe.decode(tokens)
         global bpe
-        tokens = line.split()
-        len_1 = len(tokens)
-        tokens_map = map(int, tokens)
-        text = [bpe.decoder.get(token, token) for token in tokens_map]
-        # print(text)
-        for idx, tok in enumerate(text):
-            if idx == 0:
-                continue
-            if tok[0] == "Ġ":
-                tok = tok[1:]
-                text[idx] = tok
-            else:
-                # assert text[idx - 1] != ""
-                text[idx - 1] = text[idx - 1] + "@@"
-        len_2 = len(text)
-        assert len_1 == len_2, print(str(tokens), str(text))
-        text = " ".join(text)
+        return bpe.decode(map(int, line.split()))
+        # global bpe
+        # tokens = line.split()
+        # len_1 = len(tokens)
+        # tokens_map = map(int, tokens)
+        # text = [bpe.decoder.get(token, token) for token in tokens_map]
+        # # print(text)
+        # for idx, tok in enumerate(text):
+        #     if idx == 0:
+        #         continue
+        #     if tok[0] == "Ġ":
+        #         tok = tok[1:]
+        #         text[idx] = tok
+        #     else:
+        #         # assert text[idx - 1] != ""
+        #         text[idx - 1] = text[idx - 1] + "@@"
+        # len_2 = len(text)
+        # assert len_1 == len_2, print(str(tokens), str(text))
+        # text = " ".join(text)
+        # text = text.replace('@@ ', '')
         # text = bytearray([bpe.byte_decoder[c] for c in text]).decode(
         #     "utf-8", errors=bpe.errors
         # )
+        
         return text
 
     def encode_lines(self, lines):
@@ -154,3 +156,7 @@ class MultiprocessingEncoder(object):
 
 if __name__ == "__main__":
     main()
+"""
+python /home/ljh/GEC/Seq2seqGEC/utils/multiprocessing_bpe_decoder.py --inputs /home/ljh/GEC/Align-and-Predict/BEA19.dev.out  --outputs /home/ljh/GEC/Align-and-Predict/BEA19.dev.out.decoded \
+    --keep-empty
+"""

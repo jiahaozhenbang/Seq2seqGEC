@@ -52,6 +52,12 @@ def load_langpair_dataset(
     num_buckets=0,
     shuffle=True,
     pad_to_multiple=1,
+    use_quality=False,
+    correct_probs_path=None,
+    entropy_path=None,
+    min_len=0,
+    max_len=1024,
+    with_tn=1,
 ):
     def split_exists(split, src, tgt, lang, data_path):
         filename = os.path.join(data_path, "{}.{}-{}.{}".format(split, src, tgt, lang))
@@ -144,6 +150,27 @@ def load_langpair_dataset(
             )
 
     tgt_dataset_sizes = tgt_dataset.sizes if tgt_dataset is not None else None
+
+    correct_probs = None
+    entropy = None
+    if use_quality:
+        if correct_probs_path:
+            assert correct_probs_path.endswith('.npz')
+            correct_probs_dict = np.load(correct_probs_path)
+            correct_probs = dict(correct_probs_dict)
+            logger.info("use correct probs: num #{}".format(len(correct_probs['lengths'])))
+        else:
+            logger.info("do not use correct probs")
+        if entropy_path:
+            assert entropy_path.endswith('.npz')
+            entropy_dict = dict(np.load(entropy_path))
+            entropy = entropy_dict
+            logger.info("use entropy: num #{}".format(len(entropy['lengths'])))
+        else:
+            logger.info("do not use entropy")
+        # for i in range(10):
+        #     print(src_dataset[i])
+        # print('in load_langpair_dataset')
     return LanguagePairDataset(
         src_dataset,
         src_dataset.sizes,
@@ -158,6 +185,12 @@ def load_langpair_dataset(
         num_buckets=num_buckets,
         shuffle=shuffle,
         pad_to_multiple=pad_to_multiple,
+        use_quality=use_quality,
+        correct_probs=correct_probs,
+        entropy=entropy,
+        min_len=min_len,
+        max_len=max_len,
+        with_tn=with_tn,
     )
 
 
@@ -213,6 +246,18 @@ class TranslationTask(LegacyFairseqTask):
                             help='if >0, then bucket source and target lengths into N '
                                  'buckets and pad accordingly; this is useful on TPUs '
                                  'to minimize the number of compilations')
+        parser.add_argument('--use-quality', action='store_true',
+                            help='whether to train with data quality adaptively')
+        parser.add_argument('--correct_probs_path', type=str,
+                            help='path to correct probs file')
+        parser.add_argument('--entropy_path', type=str,
+                            help='path to entropy file')
+        parser.add_argument('--min_len', type=int,default=0,
+                            help='filter')
+        parser.add_argument('--max_len', type=int,default=1024,
+                            help='filter')
+        parser.add_argument('--train_with_tn', type=int,default=1,
+                            help='with tn (input == output)')
 
         # options for reporting BLEU during validation
         parser.add_argument('--eval-bleu', action='store_true',
@@ -239,6 +284,10 @@ class TranslationTask(LegacyFairseqTask):
         super().__init__(args)
         self.src_dict = src_dict
         self.tgt_dict = tgt_dict
+        if not hasattr(self.args, 'use_quality'):
+            self.args.use_quality = False
+        if self.args.use_quality:
+            assert self.args.correct_probs_path or self.args.entropy_path
 
     @classmethod
     def setup_task(cls, args, **kwargs):
@@ -312,6 +361,12 @@ class TranslationTask(LegacyFairseqTask):
             num_buckets=self.args.num_batch_buckets,
             shuffle=(split != "test"),
             pad_to_multiple=self.args.required_seq_len_multiple,
+            use_quality=self.args.use_quality if split == "train" else False,
+            correct_probs_path=self.args.correct_probs_path,
+            entropy_path=self.args.entropy_path,
+            min_len=self.args.min_len,
+            max_len=self.args.max_len,
+            with_tn=self.args.train_with_tn if split == "train" else True,
         )
 
     def build_dataset_for_inference(self, src_tokens, src_lengths, constraints=None):

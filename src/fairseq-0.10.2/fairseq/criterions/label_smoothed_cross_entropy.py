@@ -67,7 +67,10 @@ class LabelSmoothedCrossEntropyCriterion(FairseqCriterion):
         3) logging outputs to display while training
         """
         net_output = model(**sample["net_input"])
-        loss, nll_loss = self.compute_loss(model, net_output, sample, reduce=reduce)
+        if 'quality' in sample:
+            loss, nll_loss = self.compute_loss_with_quality(model, net_output, sample, reduce=reduce)
+        else:
+            loss, nll_loss = self.compute_loss(model, net_output, sample, reduce=reduce)
         sample_size = (
             sample["target"].size(0) if self.sentence_avg else sample["ntokens"]
         )
@@ -105,6 +108,39 @@ class LabelSmoothedCrossEntropyCriterion(FairseqCriterion):
             ignore_index=self.padding_idx,
             reduce=reduce,
         )
+        return loss, nll_loss
+
+    def compute_loss_with_quality(self, model, net_output, sample, reduce=True):
+        lprobs, target = self.get_lprobs_and_target(model, net_output, sample)
+        weights = sample['quality'].view(-1)
+        assert target.shape == weights.shape
+
+        epsilon=self.eps
+        ignore_index=self.padding_idx
+        if target.dim() == lprobs.dim() - 1:
+            target = target.unsqueeze(-1)
+            weights = weights.unsqueeze(-1)
+        nll_loss = -lprobs.gather(dim=-1, index=target)
+        smooth_loss = -lprobs.sum(dim=-1, keepdim=True)
+        if ignore_index is not None:
+            pad_mask = target.eq(ignore_index)
+            nll_loss.masked_fill_(pad_mask, 0.0)
+            smooth_loss.masked_fill_(pad_mask, 0.0)
+            weights.masked_fill_(pad_mask, 0.0)
+        else:
+            nll_loss = nll_loss.squeeze(-1)
+            smooth_loss = smooth_loss.squeeze(-1)
+        ntokens = target.ne(ignore_index).sum()
+        normed_weight = weights * ntokens / weights.sum()
+
+        # print(nll_loss.shape, smooth_loss.shape, weights.shape, (nll_loss * weights).shape)
+        nll_loss = nll_loss * normed_weight
+        smooth_loss = smooth_loss * normed_weight
+        if reduce:
+            nll_loss = nll_loss.sum()
+            smooth_loss = smooth_loss.sum()
+        eps_i = epsilon / lprobs.size(-1)
+        loss = (1.0 - epsilon) * nll_loss + eps_i * smooth_loss
         return loss, nll_loss
 
     def compute_accuracy(self, model, net_output, sample):
